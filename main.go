@@ -1,15 +1,23 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"github.com/remuscazacu/chirpy/internal/database"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
+	dbQueries      *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -98,7 +106,27 @@ func handlerValidateChirp(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	apiCfg := &apiConfig{}
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
+	dbURL := os.Getenv("DB_URL")
+	if dbURL == "" {
+		log.Fatal("DB_URL environment variable is not set")
+	}
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil {
+		log.Fatal("Error opening database connection:", err)
+	}
+	defer db.Close()
+
+	dbQueries := database.New(db)
+
+	apiCfg := &apiConfig{
+		dbQueries: dbQueries,
+	}
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/healthz", handlerReadiness)
