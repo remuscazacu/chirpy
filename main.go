@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/remuscazacu/chirpy/internal/auth"
 	"github.com/remuscazacu/chirpy/internal/database"
 )
 
@@ -197,7 +198,8 @@ func (cfg *apiConfig) handlerGetChirpByID(w http.ResponseWriter, r *http.Request
 
 func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) {
 	type requestBody struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Password string `json:"password"`
 	}
 
 	decoder := json.NewDecoder(r.Body)
@@ -208,13 +210,56 @@ func (cfg *apiConfig) handlerCreateUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	user, err := cfg.dbQueries.CreateUser(r.Context(), reqBody.Email)
+	hashedPassword, err := auth.HashPassword(reqBody.Password)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Failed to hash password")
+		return
+	}
+
+	user, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{
+		Email:          reqBody.Email,
+		HashedPassword: hashedPassword,
+	})
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Failed to create user")
 		return
 	}
 
 	respondWithJSON(w, http.StatusCreated, User{
+		ID:        user.ID,
+		CreatedAt: user.CreatedAt,
+		UpdatedAt: user.UpdatedAt,
+		Email:     user.Email,
+	})
+}
+
+func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
+	type requestBody struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	decoder := json.NewDecoder(r.Body)
+	reqBody := requestBody{}
+	err := decoder.Decode(&reqBody)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request")
+		return
+	}
+
+	user, err := cfg.dbQueries.GetUserByEmail(r.Context(), reqBody.Email)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	match, err := auth.CheckPasswordHash(reqBody.Password, user.HashedPassword)
+	if err != nil || !match {
+		respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, User{
 		ID:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
@@ -257,6 +302,7 @@ func main() {
 	mux.HandleFunc("POST /api/chirps", apiCfg.handlerCreateChirp)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handlerGetChirpByID)
 	mux.HandleFunc("POST /api/users", apiCfg.handlerCreateUser)
+	mux.HandleFunc("POST /api/login", apiCfg.handlerLogin)
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
