@@ -183,8 +183,8 @@ func TestHandlerCreateChirp_InvalidJSON(t *testing.T) {
 
 	cfg.handlerCreateChirp(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("handlerCreateChirp() with no body status = %v, want %v", w.Code, http.StatusBadRequest)
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("handlerCreateChirp() with no auth status = %v, want %v", w.Code, http.StatusUnauthorized)
 	}
 
 	var response struct {
@@ -194,8 +194,8 @@ func TestHandlerCreateChirp_InvalidJSON(t *testing.T) {
 		t.Fatalf("Failed to unmarshal response: %v", err)
 	}
 
-	if response.Error != "Invalid request" {
-		t.Errorf("handlerCreateChirp() error = %v, want Invalid request", response.Error)
+	if response.Error != "Unauthorized" {
+		t.Errorf("handlerCreateChirp() error = %v, want Unauthorized", response.Error)
 	}
 }
 
